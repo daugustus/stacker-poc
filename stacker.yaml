@@ -1,6 +1,6 @@
 # this is an minimal `stack config` file.
 # http://stacker.readthedocs.io/en/latest/config.html
-# 
+#
 # The stacker namespace, provided by the environment file.
 # http://stacker.readthedocs.io/en/latest/config.html#namespace-delimiter
 namespace: ${namespace}
@@ -14,20 +14,100 @@ stacker_bucket: stacker-dod
 # http://stacker.readthedocs.io/en/latest/config.html#module-paths
 sys_path: .
 
+mappings:
+  AmiMap:
+    us-east-2:
+      NAT: ami-882914ed
+      ubuntu1604: ami-737e2416
+      dod: ami-28e9d44d
+      centos7: ami-7df1ab18
+      centos7hp: ami-28e9d44d # high perf created by Chef
+
+vpc_variables: &vpc_variables
+  VpcId: ${output vpc::VpcId} # default output lookup variable refers to <stack>::<Output>
+  DefaultSG: ${output vpc::DefaultSG}
+  PublicSubnets: ${output vpc::PublicSubnets}
+  PrivateSubnets: ${output vpc::PrivateSubnets}
+  AvailabilityZones: ${output vpc::AvailabilityZones}
+
+
 # The stacks key accepts a list of stack declarations.
 # http://stacker.readthedocs.io/en/latest/config.html#stacks
 stacks:
+  - name: vpc
+    class_path: blueprints.vpc.VPC
+    locked: false
+    enabled: true
+    variables:
+      InstanceType: ${nat_instance_type}
+      SshKeyName: ${ssh_key_name}
+      ImageName: NAT
+      AZCount: 3
+      PublicSubnets:
+        - 10.10.0.0/24
+        - 10.10.1.0/24
+        - 10.10.2.0/24
+        - 10.10.3.0/24
+      PrivateSubnets:
+        - 10.10.8.0/22
+        - 10.10.12.0/22
+        - 10.10.16.0/22
+        - 10.10.20.0/22
+      CidrBlock: 10.10.0.0/16
+      BaseDomain: ${external_domain}
+      InternalDomain: dod
 
-  # This is an example minimal stack.
-  # The 'name' and 'class_path' keys are required.
-  # The 'name' value must be unique.
-  # The 'class_path' points at a Python stacker "blueprint" class.
-  - name: touch-nothing
-    class_path: blueprints.touch.Touch
+  - name: bastion
+    class_path: blueprints.bastion.Bastion
+    variables:
+      << : *vpc_variables
+      InstanceType: ${bastion_instance_type}
+      OfficeNetwork: ${trusted_network_cidr}
+      MinSize: 2
+      MaxSize: 2
+      SshKeyName: ${ssh_key_name}
+      ImageName: centos7
 
-    # in this case, if you look in the "blueprints" directory at the file "touch.py"
-    # you will see a Python class called "Touch".
+  - name: dnssetup
+    class_path: blueprints.route53.DNSRecords
+    variables:
+      << : *vpc_variables
+      HostedZoneName: ${external_domain}
 
-    # when we execute stacker with this `stack config`, it will automatically run the
-    # blueprint code to produce a CloudFormation JSON template, upload it to s3, and
-    # trigger a CloudFormation create/update.
+  # simple health check, replace instances if unhealthy,
+  # instances come back into service on their own
+  - name: myelb
+    class_path: blueprints.asg.AutoscalingGroup
+    variables:
+      << : *vpc_variables
+      MinSize: 3
+      MaxSize: 3
+      SshKeyName: ${ssh_key_name}
+      ImageName: centos7
+      InstanceType: t2.medium
+      ELBHostName: dod
+      BaseDomain: ${external_domain}
+
+  - name: configrole
+    class_path: blueprints.iam_roles.Roles
+    variables:
+      << : *vpc_variables
+      Ec2Roles: ['ec2config']
+
+
+  # - name: configbucket
+  #   class_path: blueprints.s3.Buckets
+  #   variables:
+  #     << : *vpc_variables
+  #     Buckets: {
+  #       'helloworld': ''
+  #     }
+  #     ReadRoles: ['ec2config']
+
+
+  # automation on instance
+  # installs nginx
+  # deploys "hello world" in html or php or whatever
+  # may be sourced from s3, cookbook, etc
+  # display servers hostname
+  #
