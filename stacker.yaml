@@ -94,15 +94,14 @@ stacks:
       << : *vpc_variables
       Ec2Roles: ['ec2config']
 
-
-  # - name: configbucket
-  #   class_path: blueprints.s3.Buckets
-  #   variables:
-  #     << : *vpc_variables
-  #     Buckets: {
-  #       'helloworld': ''
-  #     }
-  #     ReadRoles: ['ec2config']
+  - name: configbucket
+    class_path: blueprints.s3.Buckets
+    variables:
+      << : *vpc_variables
+      Buckets: {
+        'helloworld': ''
+      }
+      ReadRoles: ['ec2config']
 
 
   # automation on instance

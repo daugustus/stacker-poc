@@ -8,7 +8,15 @@ from troposphere import (
     iam,
 )
 
-from awacs.aws import Policy
+from awacs.aws import (
+    Allow,
+    Policy,
+    Principal,
+    Statement
+)
+
+from awacs import s3
+
 from awacs.helpers.trust import (
     get_default_assumerole_policy,
     get_lambda_assumerole_policy
@@ -70,8 +78,17 @@ class Roles(Blueprint):
 
         If not specified, no Policy will be created.
         """
+        s = Statement(
+#            Principal=Principal('Service', 'ec2'),
+            Effect=Allow,
+            Action=[
+                s3.GetObject,
+                s3.ListAllMyBuckets
+            ],
+            Resource=["*"]
+        )
 
-        return []
+        return [s]
 
     def create_policy(self, name):
         statements = self.generate_policy_statements()
@@ -97,7 +114,9 @@ class Roles(Blueprint):
         self.policies.append(policy)
 
     def create_template(self):
+        t = self.template
         variables = self.get_variables()
+        print(variables)
 
         for role in variables['Ec2Roles']:
             self.create_ec2_role(role)
@@ -105,4 +124,4 @@ class Roles(Blueprint):
         for role in variables['LambdaRoles']:
             self.create_lambda_role(role)
 
-        self.create_policy()
+        self.create_policy('ec2readonly')
