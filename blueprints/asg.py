@@ -171,6 +171,7 @@ class AutoscalingGroup(Blueprint):
         elb_sg = ELB_SG_NAME % self.name
         t.add_resource(elb.LoadBalancer(
             elb_name,
+            CrossZone=True,
             HealthCheck=elb.HealthCheck(
                 Target='HTTP:80/',
                 HealthyThreshold=3,
@@ -231,11 +232,13 @@ class AutoscalingGroup(Blueprint):
     def get_autoscaling_group_parameters(self, launch_config_name, elb_name):
         return {
             'AvailabilityZones': Ref("AvailabilityZones"),
+            'HealthCheckGracePeriod': 600,
             'LaunchConfigurationName': Ref(launch_config_name),
             'MinSize': Ref("MinSize"),
             'MaxSize': Ref("MaxSize"),
             'VPCZoneIdentifier': Ref("PrivateSubnets"),
             'LoadBalancerNames': If("CreateELB", [Ref(elb_name), ], []),
+            'HealthCheckType': "ELB",
             'Tags': [
                 ASTag('Name', self.name, True)
             ],

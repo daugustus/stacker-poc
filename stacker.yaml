@@ -62,12 +62,6 @@ stacks:
       SshKeyName: ${ssh_key_name}
       ImageName: centos7
 
-  - name: dnssetup
-    class_path: blueprints.route53.DNSRecords
-    variables:
-      << : *vpc_variables
-      HostedZoneName: ${external_domain}
-
   - name: roleconfig
     class_path: blueprints.iam_roles.Roles
     variables:
@@ -83,7 +77,7 @@ stacks:
         'helloworld': {}
       }
 
-  - name: myelb
+  - name: webservers
     class_path: blueprints.asg.AutoscalingGroup
     variables:
       << : *vpc_variables
