@@ -1,17 +1,7 @@
-# this is an minimal `stack config` file.
-# http://stacker.readthedocs.io/en/latest/config.html
-#
-# The stacker namespace, provided by the environment file.
-# http://stacker.readthedocs.io/en/latest/config.html#namespace-delimiter
 namespace: ${namespace}
 
-# The bucket where stacker stores generated CloudFormation templates.
-# http://stacker.readthedocs.io/en/latest/config.html#s3-bucket
 stacker_bucket: stacker-dod
 
-# This sets the syspath to include the local path, which allows access to the
-# blueprints in the blueprints directory.
-# http://stacker.readthedocs.io/en/latest/config.html#module-paths
 sys_path: .
 
 mappings:
@@ -30,9 +20,13 @@ vpc_variables: &vpc_variables
   PrivateSubnets: ${output vpc::PrivateSubnets}
   AvailabilityZones: ${output vpc::AvailabilityZones}
 
+roles_variables: &roles_variables
+  Ec2Roles: ${output roleconfig::Ec2Roles}
+  InstanceProfile: ${output roleconfig::Ec2InstanceProfile}
 
-# The stacks key accepts a list of stack declarations.
-# http://stacker.readthedocs.io/en/latest/config.html#stacks
+bucket_variables: &bucket_variables
+  BootstrapBucket: ${output bucketconfig::helloworldBucketId}
+
 stacks:
   - name: vpc
     class_path: blueprints.vpc.VPC
@@ -74,12 +68,27 @@ stacks:
       << : *vpc_variables
       HostedZoneName: ${external_domain}
 
-  # simple health check, replace instances if unhealthy,
-  # instances come back into service on their own
+  - name: roleconfig
+    class_path: blueprints.iam_roles.Roles
+    variables:
+      << : *vpc_variables
+      Ec2Roles: ['ec2config']
+
+  - name: bucketconfig
+    class_path: blueprints.s3.Buckets
+    variables:
+      << : *vpc_variables
+      << : *roles_variables
+      Buckets: {
+        'helloworld': {}
+      }
+
   - name: myelb
     class_path: blueprints.asg.AutoscalingGroup
     variables:
       << : *vpc_variables
+      << : *roles_variables
+      << : *bucket_variables
       MinSize: 3
       MaxSize: 3
       SshKeyName: ${ssh_key_name}
@@ -87,26 +96,3 @@ stacks:
       InstanceType: t2.medium
       ELBHostName: dod
       BaseDomain: ${external_domain}
-
-  - name: configrole
-    class_path: blueprints.iam_roles.Roles
-    variables:
-      << : *vpc_variables
-      Ec2Roles: ['ec2config']
-
-  - name: configbucket
-    class_path: blueprints.s3.Buckets
-    variables:
-      << : *vpc_variables
-      Buckets: {
-        'helloworld': ''
-      }
-      ReadRoles: ['ec2config']
-
-
-  # automation on instance
-  # installs nginx
-  # deploys "hello world" in html or php or whatever
-  # may be sourced from s3, cookbook, etc
-  # display servers hostname
-  #

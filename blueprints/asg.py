@@ -1,7 +1,7 @@
 import copy
 
 from troposphere import (
-    Ref, FindInMap, Not, Equals, And, Condition, Join, ec2, autoscaling,
+    Base64, Ref, FindInMap, Not, Equals, And, Condition, Join, ec2, autoscaling,
     If, GetAtt, Output
 )
 from troposphere import elasticloadbalancing as elb
@@ -69,6 +69,14 @@ class AutoscalingGroup(Blueprint):
         'ELBCertType': {
             'type': CFNString,
             'description': 'The SSL certificate type to use on the ELB.',
+            'default': ''},
+        'InstanceProfile': {
+            'type': str,
+            'description': 'IAM Instance Profile for EC2 Instances',
+            'default': ''},
+        'BootstrapBucket': {
+            'type': CFNString,
+            'description': 'Bucket for Initial Bootstrap',
             'default': ''},
     }
 
@@ -189,13 +197,34 @@ class AutoscalingGroup(Blueprint):
                 Condition="SetupELBDNS"))
 
     def get_launch_configuration_parameters(self):
+        variables = self.get_variables()
         return {
-            'ImageId': FindInMap('AmiMap', Ref("AWS::Region"),
-                                 Ref('ImageName')),
+            'ImageId': FindInMap('AmiMap', Ref("AWS::Region"), Ref('ImageName')),
             'InstanceType': Ref("InstanceType"),
             'KeyName': Ref("SshKeyName"),
+            'IamInstanceProfile': variables['InstanceProfile'],
             'SecurityGroups': self.get_launch_configuration_security_groups(),
+            'UserData': self.get_launch_configuration_userdata(),
         }
+
+    def get_launch_configuration_metadata():
+
+        return
+
+    def get_launch_configuration_userdata(self):
+        return Base64(Join('', [
+            "#!/bin/bash\n",
+            "/usr/bin/cloud-init-per once yum-update yum update -y",
+            "/usr/bin/cloud-init-per once bootstrap-deps1 yum install nginx cloud-utils python-pip jq -y",
+            "/usr/bin/cloud-init-per once bootstrap-deps2 pip install awscli botocore boto",
+            "/usr/bin/cloud-init-per always bootstrap-pull aws s3 cp s3://", Ref("BootstrapBucket"), "/configs/bootstrap.sh /root/bootstrap.sh",
+            "/usr/bin/cloud-init-per always bootstrap-chmod chmod +x /root/bootstrap.sh",
+            "/usr/bin/cloud-init-per once bootstrap-run /root/bootstrap.sh",
+            "cfn-signal -e 0",
+            "    --resource AutoscalingGroup",
+            "    --stack ", Ref("AWS::StackName"),
+            "    --region ", Ref("AWS::Region"), "\n"
+        ]))
 
     def get_autoscaling_group_parameters(self, launch_config_name, elb_name):
         return {
@@ -205,7 +234,9 @@ class AutoscalingGroup(Blueprint):
             'MaxSize': Ref("MaxSize"),
             'VPCZoneIdentifier': Ref("PrivateSubnets"),
             'LoadBalancerNames': If("CreateELB", [Ref(elb_name), ], []),
-            'Tags': [ASTag('Name', self.name, True)],
+            'Tags': [
+                ASTag('Name', self.name, True)
+            ],
         }
 
     def get_launch_configuration_security_groups(self):
@@ -232,53 +263,3 @@ class AutoscalingGroup(Blueprint):
         self.create_load_balancer()
         self.create_autoscaling_group()
 
-
-class FlexibleAutoScalingGroup(Blueprint):
-    """ A more flexible AutoscalingGroup Blueprint.
-
-    Uses TroposphereTypes to make creating AutoscalingGroups and their
-    associated LaunchConfiguration more flexible. This comes at the price of
-    doing less for you.
-    """
-    VARIABLES = {
-        "LaunchConfiguration": {
-            "type": TroposphereType(autoscaling.LaunchConfiguration),
-            "description": "The LaunchConfiguration for the autoscaling "
-                           "group.",
-        },
-        "AutoScalingGroup": {
-            "type": TroposphereType(autoscaling.AutoScalingGroup),
-            "description": "The Autoscaling definition. Do not provide a "
-                           "LaunchConfiguration parameter, that will be "
-                           "automatically added from the LaunchConfiguration "
-                           "Variable.",
-        },
-    }
-
-    def create_launch_configuration(self):
-        t = self.template
-        variables = self.get_variables()
-        self.launch_config = t.add_resource(variables["LaunchConfiguration"])
-        t.add_output(
-            Output("LaunchConfiguration", Value=self.launch_config.Ref())
-        )
-
-    def add_launch_config_variable(self, asg):
-        if getattr(asg, "LaunchConfigurationName", False):
-            raise ValueError("Do not provide a LaunchConfigurationName "
-                             "variable for the AutoScalingGroup config.")
-
-        asg.LaunchConfigurationName = self.launch_config.Ref()
-        return asg
-
-    def create_autoscaling_group(self):
-        t = self.template
-        variables = self.get_variables()
-        asg = variables["AutoScalingGroup"]
-        asg = self.add_launch_config_variable(asg)
-        t.add_resource(asg)
-        t.add_output(Output("AutoScalingGroup", Value=asg.Ref()))
-
-    def create_template(self):
-        self.create_launch_configuration()
-        self.create_autoscaling_group()

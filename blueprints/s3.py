@@ -17,6 +17,8 @@ from .policies import (
     static_website_bucket_policy,
 )
 
+from stacker.blueprints.variables.types import CFNCommaDelimitedList
+
 # reference:
 #   https://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
 S3_WEBSITE_ENDPOINTS = {
@@ -60,7 +62,10 @@ class Buckets(Blueprint):
                            "access to the buckets created.",
             "default": []
         },
-
+        "Ec2Roles": {
+            "type": str,
+            "description": "Availability Zones to deploy instances in."
+        },
     }
 
     def create_template(self):
@@ -119,6 +124,10 @@ class Buckets(Blueprint):
                     Roles=read_write_roles,
                 )
             )
+
+        if variables['Ec2Roles']:
+            for ec2role in variables['Ec2Roles'].split(','):
+                variables["ReadRoles"].append(ec2role)
 
         read_only_roles = variables["ReadRoles"]
         if read_only_roles:
