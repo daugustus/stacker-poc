@@ -51,6 +51,12 @@ stacks:
       BaseDomain: ${external_domain}
       InternalDomain: dod
 
+  - name: dnssetup
+    class_path: blueprints.route53.DNSRecords
+    variables:
+      << : *vpc_variables
+      HostedZoneName: ${external_domain}
+
   - name: bastion
     class_path: blueprints.bastion.Bastion
     variables:
